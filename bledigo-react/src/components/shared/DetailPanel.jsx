@@ -3,8 +3,8 @@ import Badge from '../ui/Badge'
 import Button from '../ui/Button'
 import ProgressBar from '../ui/ProgressBar'
 
-const statusMap   = { 'En cours':'progress','En attente':'pending','Resolue':'resolved','Critique':'urgent' }
-const progressMap = { 'En attente':25,'En cours':60,'Critique':15,'Resolue':100 }
+const statusMap   = { 'En cours':'progress','En attente':'pending','Resolue':'resolved','Critique':'urgent', 'Pending':'pending', 'In Progress':'progress', 'Resolved':'resolved', 'Critical':'urgent' }
+const progressMap = { 'En attente':25,'En cours':60,'Critique':15,'Resolue':100, 'Pending':25, 'In Progress':60, 'Resolved':100, 'Critical':15 }
 
 const TIMELINE = [
   { label:'Réclamation soumise',       key:'submitted'  },
@@ -27,7 +27,7 @@ function safeStr(val, fallback = '—') {
   return fallback
 }
 
-export default function DetailPanel({ rec, open, onClose, onResolve, onReassign, onStatusChange }) {
+export default function DetailPanel({ rec, open, onClose, onResolve, onReassign, onStatusChange, hideResolveButton = false }) {
   if (!rec) return null
 
   const progress  = progressMap[rec.status] ?? 25
@@ -41,6 +41,7 @@ export default function DetailPanel({ rec, open, onClose, onResolve, onReassign,
   const recId        = String(rec._id || rec.id || rec.ref || '—').slice(-6)
   const recDate      = safeStr(rec.date || (rec.createdAt ? new Date(rec.createdAt).toLocaleDateString('fr-FR') : null))
   const recDesc      = safeStr(rec.description || rec.desc, 'Aucune description disponible.')
+  const isResolved   = rec.status === 'Resolue' || rec.status === 'Resolved'
 
   return (
     <>
@@ -71,9 +72,20 @@ export default function DetailPanel({ rec, open, onClose, onResolve, onReassign,
           </div>
 
           {/* Description */}
-          <div className="bg-surface-2 rounded-[10px] p-3.5 text-[13.5px] text-t1 leading-relaxed">
+          <div className="bg-surface-2 rounded-[10px] p-3.5 text-[13.5px] text-t1 leading-relaxed mb-1">
             {recDesc}
           </div>
+
+          {/* Rapport Agent */}
+          {rec.resolutionReport?.text && (
+            <div>
+              <h3 className="font-syne text-[13px] font-bold mb-2 text-primary">Rapport d'intervention (Agent)</h3>
+              <div className="bg-primary/5 border border-primary/20 rounded-[10px] p-3.5 text-[13px] text-t1 leading-relaxed">
+                <span className="font-semibold text-primary">{rec.resolutionReport.submittedAt ? new Date(rec.resolutionReport.submittedAt).toLocaleDateString('fr-FR') : ''} — </span>
+                {rec.resolutionReport.text}
+              </div>
+            </div>
+          )}
 
           {/* Info grid — all values are safe strings */}
           <div className="grid grid-cols-2 gap-2.5 text-[13px]">
@@ -128,7 +140,7 @@ export default function DetailPanel({ rec, open, onClose, onResolve, onReassign,
             </div>
           </div>
 
-          {/* Status change */}
+          {/* Status change (always visible) */}
           <div>
             <label className="block text-[11.5px] font-semibold text-t2 uppercase tracking-[0.05em] mb-1.5">
               Changer le statut
@@ -145,11 +157,14 @@ export default function DetailPanel({ rec, open, onClose, onResolve, onReassign,
             </select>
           </div>
 
-          {/* Actions */}
+          {/* Actions (conditional buttons) */}
           <div className="flex gap-2">
-            <Button variant="success" className="flex-1" onClick={() => onResolve?.(rec._id || rec.id)}>
-              <CheckCircle size={14} /> Marquer résolue
-            </Button>
+            {/* Afficher "Marquer résolue" seulement si la réclamation n'est pas résolue et que le bouton n'est pas masqué */}
+            {!hideResolveButton && !isResolved && (
+              <Button variant="success" className="flex-1" onClick={() => onResolve?.(rec._id || rec.id)}>
+                <CheckCircle size={14} /> Marquer résolue
+              </Button>
+            )}
             <Button variant="accent" className="flex-1" onClick={() => onReassign?.(rec._id || rec.id)}>
               <RefreshCw size={14} /> Réaffecter
             </Button>

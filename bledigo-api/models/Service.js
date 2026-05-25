@@ -23,6 +23,10 @@ const DemandSchema = new mongoose.Schema(
     processedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     processedAt: { type: Date },
     requestedDate: { type: Date },
+    evaluation: {
+      score: { type: Number, min: 1, max: 5 },
+      comment: { type: String, trim: true }
+    }
   },
   { timestamps: true }
 );

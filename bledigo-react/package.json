@@ -9,11 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@svg-maps/tunisia": "^2.0.0",
+    "axios": "^1.6.7",
+    "lucide-react": "^0.383.0",
+    "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-is": "^19.2.5",
     "react-router-dom": "^6.22.0",
-    "lucide-react": "^0.383.0",
-    "axios": "^1.6.7"
+    "react-svg-map": "^2.2.0",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",

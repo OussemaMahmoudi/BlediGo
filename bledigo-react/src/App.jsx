@@ -11,6 +11,7 @@ import AdminDashboard     from './pages/admin/AdminDashboard'
 import AdminServices      from './pages/admin/AdminServices'
 import AgentDashboard     from './pages/agent/AgentDashboard'
 import PublicFeed         from './pages/public/PublicFeed'
+import CancelPage        from './pages/CancelPage'
 import NotFound           from './pages/NotFound'
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
 
           <Route path="/login"       element={<LoginPage />} />
           <Route path="/public-feed" element={<PublicFeed />} />
+          <Route path="/cancel"      element={<CancelPage />} />
 
           <Route path="/user/dashboard" element={
             <ProtectedRoute roles={['Citoyen']}>

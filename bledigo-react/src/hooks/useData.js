@@ -3,7 +3,7 @@
  */
 import { useState, useEffect, useCallback } from 'react'
 import {
-  reclamationsAPI, servicesAPI, usersAPI, agentsAPI, notificationsAPI,
+  reclamationsAPI, servicesAPI, usersAPI, agentsAPI, notificationsAPI, messagesAPI
 } from '../services/api'
 
 function useApiData(apiFn, deps = []) {
@@ -56,6 +56,29 @@ export function useServices(params = {}) {
   return useApiData(() => servicesAPI.getAll(params), [JSON.stringify(params)])
 }
 
+// BF10: citizen's own demand history
+export function useMyDemands() {
+  const [data,    setData]    = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const refetch = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await servicesAPI.getMyDemands()
+      // API returns { success, data: [...] }
+      const arr = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []
+      setData(arr)
+    } catch {
+      setData([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { refetch() }, [refetch])
+  return { data, loading, setData, refetch }
+}
+
 // Demands: fetched from all services, flattened
 export function useDemandes() {
   const [data,    setData]    = useState([])
@@ -65,9 +88,13 @@ export function useDemandes() {
   const refetch = useCallback(async () => {
     setLoading(true)
     try {
-      const res      = await servicesAPI.getAll({ limit: 100 })
-      const services = Array.isArray(res?.data) ? res.data
-                     : res?.data?.services ?? []
+      const res = await servicesAPI.getAll({ limit: 100 })
+      // servicesAPI.getAll → axio → unwrap → res.data (whatever structure)
+      // The server returns { success, data: { services: [...], pagination: {} } }
+      const payload  = res?.data ?? res
+      const services = Array.isArray(payload) ? payload
+                     : Array.isArray(payload?.services) ? payload.services
+                     : []
       // Flatten all demands from all services, attach service info
       const all = []
       services.forEach(svc => {
@@ -77,6 +104,9 @@ export function useDemandes() {
             serviceId:   svc._id || svc.id,
             serviceName: svc.name,
             serviceCategory: svc.category,
+            avgRating:   svc.stats?.avgRating,
+            userRating:  (d.evaluation?.score >= 1) ? d.evaluation.score : null,
+            rated:       (d.evaluation?.score >= 1),
           })
         })
       })
@@ -128,15 +158,20 @@ export function useComments() {
     setLoading(true)
     try {
       const res  = await reclamationsAPI.getAll({ limit: 100 })
-      const recs = Array.isArray(res?.data) ? res.data : res?.data?.reclamations ?? []
+      const recs = Array.isArray(res) ? res : res?.reclamations || res?.data?.reclamations || []
       const all  = []
       recs.forEach(r => {
         ;(r.comments || []).forEach(c => {
           all.push({
-            ...c,
-            reclamationId:    r._id || r.id,
-            reclamationTitle: r.title,
+            id: c._id || c.id,
+            text: c.text,
+            user: c.authorName || 'Citoyen', // Assuming authorName or fallback
+            time: c.createdAt ? new Date(c.createdAt).toLocaleString('fr-FR') : 'Récemment',
+            timestamp: c.createdAt ? new Date(c.createdAt).getTime() : 0,
+            rec: r.title || 'Réclamation',
+            reclamationId: r._id || r.id,
             flagged: false, // backend auto-rejects banned words; flagged = false by default
+            deleted: false
           })
         })
       })
@@ -150,4 +185,25 @@ export function useComments() {
 
   useEffect(() => { refetch() }, [refetch])
   return { data, loading, error: null, setData, refetch }
+}
+
+export function useUnreadMessages() {
+  const [unread, setUnread] = useState(0)
+  
+  const fetchUnread = useCallback(async () => {
+    try {
+      const res = await messagesAPI.getUnreadCount()
+      if (res?.data?.count !== undefined) {
+        setUnread(res.data.count)
+      }
+    } catch { }
+  }, [])
+
+  useEffect(() => {
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 15000) // update every 15s in the background
+    return () => clearInterval(interval)
+  }, [fetchUnread])
+
+  return unread
 }

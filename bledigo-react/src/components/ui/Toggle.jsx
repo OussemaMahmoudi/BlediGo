@@ -10,10 +10,10 @@ export default function Toggle({ checked, onChange }) {
       }`}
     >
       <span
-        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200 ${
-          checked ? 'translate-x-[18px]' : 'translate-x-0.5'
+        className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-200 ${
+          checked ? 'left-[18px]' : 'left-[2px]'
         }`}
-        style={{ boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }}
+        style={{ boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }}
       />
     </button>
   )

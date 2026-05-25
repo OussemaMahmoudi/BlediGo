@@ -76,6 +76,18 @@ function toFormData(obj, files = [], fileField = 'images') {
 // AUTH
 // ═══════════════════════════════════════════════════════
 export const authAPI = {
+  sendVerification: (email, firstName) =>
+    api.post('/auth/send-verification', { email, firstName }).then(unwrap),
+
+  requestPasswordReset: (email, role) =>
+    api.post('/auth/forgot-password-code', { email, role }).then(unwrap),
+
+  verifyResetCode: (email, code) =>
+    api.post('/auth/verify-reset-code', { email, code }).then(unwrap),
+
+  resetPasswordWithCode: (email, role, code, newPassword) =>
+    api.post('/auth/reset-password', { email, role, code, newPassword }).then(unwrap),
+
   register: (data) =>
     api.post('/auth/register', data).then(unwrap),
 
@@ -163,6 +175,13 @@ export const servicesAPI = {
   getById: (id) =>
     api.get(`/services/${id}`).then(unwrap),
 
+  getQR: (id) =>
+    api.get(`/services/${id}/qr`).then(unwrap),
+
+  /** Citizen: my own demands across all services */
+  getMyDemands: () =>
+    api.get('/services/my-demands').then(unwrap),
+
   create: (data) =>
     api.post('/services', data).then(unwrap),
 
@@ -175,11 +194,19 @@ export const servicesAPI = {
   submitDemand: (id, data = {}) =>
     api.post(`/services/${id}/demand`, data).then(unwrap),
 
+  /** Citizen: cancel own demand within 24h */
+  cancelMyDemand: (serviceId, demandId) =>
+    api.delete(`/services/${serviceId}/demand/${demandId}`).then(unwrap),
+
   processDemand: (id, demandId, status, notes = '') =>
     api.patch(`/services/${id}/demand/${demandId}`, { status, notes }).then(unwrap),
 
-  rate: (id, score, comment = '') =>
-    api.post(`/services/${id}/rate`, { score, comment }).then(unwrap),
+  /** Admin: reassign an overdue demand */
+  reassignDemand: (serviceId, demandId, agentId) =>
+    api.patch(`/services/${serviceId}/demand/${demandId}/reassign`, { agentId }).then(unwrap),
+
+  rate: (id, score, comment = '', demandId = null) =>
+    api.post(`/services/${id}/rate`, { score, comment, demandId }).then(unwrap),
 }
 
 // ═══════════════════════════════════════════════════════
@@ -270,6 +297,31 @@ export const profileAPI = {
   updateMe:       (data) => api.patch('/profile/me', data).then(unwrap),
   changePassword: (currentPassword, newPassword) =>
     api.post('/auth/change-password', { currentPassword, newPassword }).then(unwrap),
+}
+
+// ═══════════════════════════════════════════════════════
+// MESSAGES
+// ═══════════════════════════════════════════════════════
+export const messagesAPI = {
+  /** Get available contacts for the current user (role-based) */
+  getContacts: () =>
+    api.get('/messages/contacts').then(unwrap),
+
+  /** Get all conversation threads */
+  getConversations: () =>
+    api.get('/messages/conversations').then(unwrap),
+
+  /** Get full message thread with a specific user */
+  getThread: (partnerId) =>
+    api.get(`/messages/thread/${partnerId}`).then(unwrap),
+
+  /** Send a message */
+  send: (receiverId, receiverRole, text, reclamationId = null) =>
+    api.post('/messages', { receiverId, receiverRole, text, ...(reclamationId ? { reclamationId } : {}) }).then(unwrap),
+
+  /** Get unread message count */
+  getUnreadCount: () =>
+    api.get('/messages/unread-count').then(unwrap),
 }
 
 export default api

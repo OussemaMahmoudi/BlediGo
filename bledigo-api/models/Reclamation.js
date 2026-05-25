@@ -111,12 +111,12 @@ const ReclamationSchema = new mongoose.Schema(
     // ── People ────────────────────────────────────────
     citizen: {
       type:     mongoose.Schema.Types.ObjectId,
-      ref:      'User',
+      ref:      'Citoyen',
       required: [true, 'Le citoyen est obligatoire.'],
     },
     assignedAgent: {
       type: mongoose.Schema.Types.ObjectId,
-      ref:  'User',
+      ref:  'Agent',
       // null = unassigned
     },
     assignedAt:  { type: Date },

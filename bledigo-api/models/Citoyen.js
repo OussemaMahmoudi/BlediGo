@@ -1,12 +1,10 @@
 'use strict';
-
 /**
  * Citoyen model  →  MongoDB collection: "citoyens"
  * ──────────────────────────────────────────────────
  * Created by public self-registration via POST /api/auth/register.
  * Email must be unique across ALL three collections (checked in controller).
  */
-
 const mongoose       = require('mongoose');
 const passwordPlugin = require('./_passwordPlugin');
 

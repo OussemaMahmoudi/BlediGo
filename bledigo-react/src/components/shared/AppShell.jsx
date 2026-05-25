@@ -1,7 +1,6 @@
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
 import ToastContainer from '../ui/Toast'
-import ApiStatus from '../ui/ApiStatus'
 
 export default function AppShell({
   role, navItems, user,
@@ -29,7 +28,6 @@ export default function AppShell({
         </main>
       </div>
       <ToastContainer toasts={toasts}/>
-      <ApiStatus/>
     </div>
   )
 }

@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import {
   FileText, Download, QrCode,
   CheckCircle, Clock, AlertTriangle, Loader2,
-  Filter, Search, Eye, X, Ban,
-  LayoutDashboard, Bell, Globe, Plus, ClipboardCheck, Settings,
+  Filter, Search, Eye, X, Ban, Activity,
+  LayoutDashboard, Bell, Globe, Plus, ClipboardCheck, Settings, MessageCircle
 } from 'lucide-react'
-import { useMyReclamations } from '../../hooks/useData'
+import { useMyReclamations, useNotifications, useUnreadMessages } from '../../hooks/useData'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../hooks/useToast'
 import AppShell from '../../components/shared/AppShell'
@@ -29,42 +29,19 @@ const STATUS_FR = {
 const URGENCY_COLOR = {
   Critical:'#E24B4A', High:'#B8760D', Medium:'#1A3C6B', Low:'#1D8C5E',
 }
+const progressMap = { 'En attente':25,'En cours':60,'Critique':15,'Resolue':100, 'Pending':25, 'In Progress':60, 'Resolved':100, 'Critical':15 }
+const TIMELINE = [
+  { label:'Réclamation soumise',       key:'submitted'  },
+  { label:'Affectée à une équipe',     key:'assigned'   },
+  { label:'En cours d\'intervention',  key:'inprogress' },
+  { label:'Résolution confirmée',      key:'resolved'   },
+]
 
 const safe = (v, fb='—') => (v != null && String(v).trim()) ? String(v) : fb
 const safeDate = (r) => r?.date || (r?.createdAt ? new Date(r.createdAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—')
 const safeId = (r) => String(r?._id||r?.id||'').slice(-6).toUpperCase() || '——'
 
-// ── Navigation items (same as dashboard) ─────────────────
-const NAV_ITEMS = [
-  {
-    label: 'Principal',
-    items: [
-      { section: 'dashboard', label: 'Tableau de bord', icon: <LayoutDashboard size={15} /> },
-    ],
-  },
-  {
-    label: 'Réclamations',
-    items: [
-      { section: 'reclamations', label: 'Mes réclamations', icon: <FileText size={15} />, badge: 0 },
-      { section: 'signal', label: 'Nouveau signalement', icon: <Plus size={15} /> },
-      { href: '/user/history', label: 'Historique & PDF', icon: <FileText size={15} /> },
-    ],
-  },
-  {
-    label: 'Services',
-    items: [
-      { section: 'services', label: 'Services municipaux', icon: <Settings size={15} /> },
-      { section: 'demandes', label: 'Mes demandes', icon: <ClipboardCheck size={15} />, badge: 0 },
-    ],
-  },
-  {
-    label: 'Communauté',
-    items: [
-      { section: 'notifications', label: 'Notifications', icon: <Bell size={15} />, badge: 0, badgeRed: true },
-      { href: '/public-feed', label: 'Feed public', icon: <Globe size={15} /> },
-    ],
-  },
-]
+// Navigation logic moved inside component
 
 // ── QR Code generator (pure canvas, no library needed) ──
 function generateQR(canvas, text) {
@@ -97,143 +74,163 @@ async function exportToPDF(rec, user, qrDataUrl) {
 
   const { jsPDF } = window.jspdf
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const W = 210, M = 20
+  const W = 210, H = 297, M = 20
 
-  const NAVY   = [26, 60, 107]
-  const ORANGE = [232, 135, 58]
-  const LIGHT  = [242, 245, 251]
-  const GRAY   = [140, 150, 174]
+  const PRIMARY   = [26, 60, 107]    // Navy
+  const ACCENT    = [232, 135, 58]   // Orange
+  const LIGHT     = [248, 250, 252]  // Very light gray/blue
+  const TEXT_DARK = [30, 41, 59]
+  const TEXT_GRAY = [100, 116, 139]
+  const BORDER    = [226, 232, 240]
 
-  doc.setFillColor(...NAVY)
-  doc.rect(0, 0, W, 30, 'F')
-  doc.setFillColor(...ORANGE)
-  doc.roundedRect(M, 8, 14, 14, 3, 3, 'F')
+  // 1. HEADER (Official look)
+  doc.setFillColor(...LIGHT)
+  doc.rect(0, 0, W, 45, 'F')
+  
+  // Custom logo box
+  doc.setFillColor(...PRIMARY)
+  doc.roundedRect(M, 12, 20, 20, 4, 4, 'F')
   doc.setTextColor(255, 255, 255)
-  doc.setFontSize(9)
+  doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
-  doc.text('BG', M + 7, 17.5, { align: 'center' })
+  doc.text('BG', M + 10, 26, { align: 'center' })
 
+  // Titles
+  doc.setTextColor(...PRIMARY)
+  doc.setFontSize(22)
+  doc.setFont('helvetica', 'bold')
+  doc.text('BlediGo', M + 36, 22)
+  
+  doc.setFontSize(10)
+  doc.setTextColor(...TEXT_GRAY)
+  doc.setFont('helvetica', 'normal')
+  doc.text('République Tunisienne — Plateforme Municipale', M + 36, 28)
+
+  // Document Info
+  doc.setFontSize(10)
+  doc.setTextColor(...TEXT_DARK)
+  doc.setFont('helvetica', 'bold')
+  doc.text(`Récépissé de Réclamation`, W - M, 20, { align: 'right' })
+  doc.setFontSize(12)
+  doc.setTextColor(...ACCENT)
+  doc.text(`N° ${safeId(rec)}`, W - M, 26, { align: 'right' })
+
+  // Decorative line
+  doc.setDrawColor(...PRIMARY)
+  doc.setLineWidth(0.5)
+  doc.line(M, 45, W - M, 45)
+
+  let y = 60
+
+  // 2. MAIN TITLE
+  doc.setTextColor(...PRIMARY)
   doc.setFontSize(16)
-  doc.text('BlediGo', M + 18, 14)
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'normal')
-  doc.text('Plateforme Municipale de Tunis', M + 18, 20)
+  doc.setFont('helvetica', 'bold')
+  const title = safe(rec.title).toUpperCase()
+  doc.text(title.length > 55 ? title.slice(0, 52) + '…' : title, M, y)
+  y += 10
 
+  // 3. STATUS BADGE
+  const statusFr = STATUS_FR[rec.status] || safe(rec.status, 'En attente')
+  doc.setFillColor(...statusFr === 'Résolue' ? [20, 184, 166] : statusFr === 'En cours' ? [59, 130, 246] : statusFr === 'Critique' ? [239, 68, 68] : [245, 158, 11])
+  doc.roundedRect(M, y, 40, 8, 2, 2, 'F')
+  doc.setTextColor(255, 255, 255)
   doc.setFontSize(9)
   doc.setFont('helvetica', 'bold')
-  doc.text(`Réf. #${safeId(rec)}`, W - M, 13, { align: 'right' })
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7.5)
-  doc.text(safeDate(rec), W - M, 20, { align: 'right' })
+  doc.text(statusFr.toUpperCase(), M + 20, y + 5.5, { align: 'center' })
+  y += 18
 
-  doc.setTextColor(...NAVY)
-  doc.setFontSize(15)
-  doc.setFont('helvetica', 'bold')
-  const title = safe(rec.title)
-  doc.text(title.length > 55 ? title.slice(0, 52) + '…' : title, M, 42)
-
-  const statusText = STATUS_FR[rec.status] || safe(rec.status, 'En attente')
-  doc.setFontSize(8)
-  doc.setFillColor(...LIGHT)
-  doc.setDrawColor(...NAVY)
-  doc.roundedRect(M, 46, 36, 8, 2, 2, 'FD')
-  doc.setTextColor(...NAVY)
-  doc.text(`Statut : ${statusText}`, M + 3, 51.5)
-
-  const urgLevel = rec.urgency?.level || 'Medium'
-  const urgColor = URGENCY_COLOR[urgLevel] || URGENCY_COLOR.Medium
-  const urgHex = urgColor.match(/\w\w/g).map(x => parseInt(x, 16))
-  doc.setFillColor(...urgHex)
-  doc.roundedRect(M + 40, 46, 36, 8, 2, 2, 'F')
-  doc.setTextColor(255, 255, 255)
-  doc.text(`IA : ${urgLevel} (${Math.round((rec.urgency?.confidence||0)*100)}%)`, M + 43, 51.5)
-
-  let y = 64
-
-  function sectionTitle(label) {
-    doc.setFillColor(...NAVY)
-    doc.rect(M, y, W - 2 * M, 7, 'F')
+  // HELPER: Section block
+  function drawSection(title) {
+    y += 5
+    doc.setFillColor(...PRIMARY)
+    doc.roundedRect(M, y, W - 2 * M, 8, 1, 1, 'F')
     doc.setTextColor(255, 255, 255)
-    doc.setFontSize(8)
+    doc.setFontSize(10)
     doc.setFont('helvetica', 'bold')
-    doc.text(label.toUpperCase(), M + 3, y + 5)
-    doc.setTextColor(50, 50, 50)
+    doc.text(title.toUpperCase(), M + 5, y + 5.5)
+    y += 15
+  }
+
+  // HELPER: Key-value row (table style)
+  function drawRow(k1, v1, k2, v2) {
+    doc.setFontSize(9)
+    doc.setTextColor(...TEXT_GRAY)
+    doc.setFont('helvetica', 'bold')
+    doc.text(k1, M + 5, y)
+    if (k2) doc.text(k2, M + 90, y)
+
+    doc.setTextColor(...TEXT_DARK)
     doc.setFont('helvetica', 'normal')
-    y += 12
+    doc.text(safe(v1), M + 30, y)
+    if (k2 && v2) doc.text(safe(v2), M + 115, y)
+    
+    y += 8
+    doc.setDrawColor(...BORDER)
+    doc.setLineWidth(0.2)
+    doc.line(M, y - 5, W - M, y - 5)
   }
 
-  function row(label, value, fullWidth = false) {
-    doc.setFontSize(7.5)
-    doc.setTextColor(...GRAY)
-    doc.text(label, M, y)
-    doc.setTextColor(30, 30, 30)
-    doc.setFont('helvetica', 'bold')
-    if (fullWidth) {
-      doc.setFont('helvetica', 'normal')
-      const lines = doc.splitTextToSize(value, W - 2 * M - 2)
-      doc.text(lines, M, y + 5)
-      y += 5 + lines.length * 5 + 3
-    } else {
-      doc.text(value, M + 35, y)
-      doc.setFont('helvetica', 'normal')
-      y += 7
-    }
-  }
+  // 4. Citoyen & Informations
+  drawSection('Informations Relatives au Dépôt')
+  drawRow('Citoyen', `${safe(user?.firstName)} ${safe(user?.lastName)}`, 'Email', safe(user?.email || '—'))
+  drawRow('Date', safeDate(rec), 'Catégorie', safe(rec.category || rec.cat))
+  drawRow('Statut', statusFr, 'Agent assigné', safe(rec.assignedAgent?.firstName ? `${rec.assignedAgent.firstName} ${rec.assignedAgent.lastName}` : rec.assignedAgent, 'Non assigné'))
 
-  sectionTitle('Informations générales')
-  row('Citoyen', `${safe(user?.firstName)} ${safe(user?.lastName)}`)
-  row('Email', safe(user?.email))
-  row('Catégorie', safe(rec.category || rec.cat))
-  row('Date de dépôt', safeDate(rec))
-  row('Municipalité', safe(rec.location?.municipality || user?.municipality, 'Tunis'))
+  // 5. Analyse détaillée
+  drawSection('Analyse & Localisation')
+  drawRow('Commune', safe(rec.location?.municipality || user?.municipality, 'Tunis'), 'Adresse', safe(rec.location?.address))
+  
+  const urgLevel = rec.urgency?.level || 'Medium'
+  const conf = `${Math.round((rec.urgency?.confidence||0)*100)}%`
+  drawRow('Urgence IA', `${urgLevel} (${conf})`, 'Coord. GPS', rec.location?.coordinates ? `${rec.location.coordinates[1]?.toFixed(5)}, ${rec.location.coordinates[0]?.toFixed(5)}` : 'Non fournies')
 
-  y += 4
-  sectionTitle('Description du problème')
-  row('', safe(rec.description, 'Aucune description.'), true)
-
-  y += 2
-  sectionTitle('Localisation')
-  row('Adresse', safe(rec.location?.address))
-  if (rec.location?.coordinates) {
-    const [lng, lat] = rec.location.coordinates
-    if (lat && lng) row('Coordonnées GPS', `${lat.toFixed(5)}, ${lng.toFixed(5)}`)
-  }
-
-  y += 2
-  sectionTitle('Analyse IA')
-  row('Niveau d\'urgence', safe(rec.urgency?.level, 'Medium'))
-  row('Confiance', `${Math.round((rec.urgency?.confidence||0)*100)}%`)
-  row('Raison', safe(rec.urgency?.reason, 'Analyse automatique'))
-
-  if (rec.assignedAgent) {
-    y += 2
-    sectionTitle('Agent assigné')
-    const agentName = typeof rec.assignedAgent === 'object'
-      ? `${safe(rec.assignedAgent.firstName)} ${safe(rec.assignedAgent.lastName)}`
-      : safe(rec.assignedAgent)
-    row('Nom', agentName)
-    if (typeof rec.assignedAgent === 'object') {
-      row('Département', safe(rec.assignedAgent.department))
-    }
-  }
-
-  if (qrDataUrl) {
-    const qrSize = 35
-    const qrX = W - M - qrSize
-    const qrY = 250
-    doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize)
-    doc.setFontSize(6.5)
-    doc.setTextColor(...GRAY)
-    doc.text('Scanner pour vérifier', qrX + qrSize / 2, qrY + qrSize + 4, { align: 'center' })
-  }
+  // 6. Description Block
+  y += 8
+  doc.setFontSize(10)
+  doc.setTextColor(...PRIMARY)
+  doc.setFont('helvetica', 'bold')
+  doc.text('DESCRIPTION DÉTAILLÉE', M, y)
+  y += 6
 
   doc.setFillColor(...LIGHT)
-  doc.rect(0, 285, W, 12, 'F')
-  doc.setTextColor(...GRAY)
-  doc.setFontSize(7)
-  doc.text('BlediGo — Plateforme Municipale de Tunis', M, 292)
-  doc.text(`Généré le ${new Date().toLocaleString('fr-FR')}`, W - M, 292, { align: 'right' })
+  doc.setDrawColor(...BORDER)
+  doc.roundedRect(M, y, W - 2 * M, 35, 2, 2, 'FD')
+  doc.setTextColor(...TEXT_DARK)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  const splitDesc = doc.splitTextToSize(safe(rec.description, 'Aucune description fournie par le citoyen.'), W - 2 * M - 10)
+  doc.text(splitDesc, M + 5, y + 6)
+  
+  y += 45
 
+  // 7. QR CODE & VERIFICATION (Bottom)
+  if (qrDataUrl) {
+    const qrSize = 40
+    doc.addImage(qrDataUrl, 'PNG', M, y, qrSize, qrSize)
+    
+    doc.setTextColor(...PRIMARY)
+    doc.setFontSize(11)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Authentification du Document', M + qrSize + 10, y + 10)
+    
+    doc.setTextColor(...TEXT_GRAY)
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    const qrText = doc.splitTextToSize("Ce document est généré électroniquement par la plateforme municipale BlediGo. Vous pouvez scanner ce QR Code pour vérifier son authenticité en temps réel sur le portail public.", 100)
+    doc.text(qrText, M + qrSize + 10, y + 16)
+  }
+
+  // 8. FOOTER
+  doc.setFillColor(...PRIMARY)
+  doc.rect(0, H - 15, W, 15, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.text('BlediGo — Document Officiel', M, H - 6)
+  doc.text(`Émis le ${new Date().toLocaleString('fr-FR')}`, W - M, H - 6, { align: 'right' })
+
+  // OUTPUT
   doc.save(`reclamation-${safeId(rec)}.pdf`)
 }
 
@@ -264,6 +261,9 @@ function DetailModal({ rec, onClose, user }) {
 
   const urgStyle = URGENCY_COLOR[rec?.urgency?.level] || URGENCY_COLOR.Medium
   const statusFr = STATUS_FR[rec?.status] || safe(rec?.status, 'En attente')
+  
+  const progress  = progressMap[rec?.status] ?? 25
+  const stepsDone = progress === 100 ? 4 : progress >= 60 ? 3 : progress >= 25 ? 2 : 1
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
@@ -293,6 +293,7 @@ function DetailModal({ rec, onClose, user }) {
 
           <div className="grid grid-cols-2 gap-3">
             {[
+              ['Citoyen', typeof rec?.citizen === 'object' ? `${safe(rec?.citizen?.firstName)} ${safe(rec?.citizen?.lastName)}`.trim() : (user ? `${user.firstName} ${user.lastName}` : safe(rec?.citizen))],
               ['Catégorie',  safe(rec?.category||rec?.cat)],
               ['Date',       safeDate(rec)],
               ['Adresse',    safe(rec?.location?.address)],
@@ -313,6 +314,18 @@ function DetailModal({ rec, onClose, user }) {
               {safe(rec?.description, 'Aucune description.')}
             </p>
           </div>
+
+          {rec?.resolutionReport?.text && (
+            <div>
+              <p className="text-[11px] font-bold text-primary uppercase tracking-wide mb-2 flex items-center gap-1.5 ">👨‍🔧 Rapport de l'agent</p>
+              <p className="text-[13.5px] text-t1 leading-relaxed border border-primary/20 bg-primary/5 rounded-[8px] p-4">
+                <span className="font-semibold block text-primary mb-1">
+                  {rec.resolutionReport.submittedAt ? new Date(rec.resolutionReport.submittedAt).toLocaleDateString('fr-FR') : ''}
+                </span>
+                {rec.resolutionReport.text}
+              </p>
+            </div>
+          )}
 
           {rec?.urgency?.reason && (
             <div className="px-4 py-3 rounded-[8px] border text-[13px]"
@@ -336,6 +349,37 @@ function DetailModal({ rec, onClose, user }) {
               </div>
             </div>
           )}
+
+          <div className="bg-surface-2 rounded-[10px] p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Activity size={16} className="text-primary"/>
+              <p className="text-[12px] font-bold text-t1 uppercase tracking-wide">Suivi en temps réel</p>
+            </div>
+            <div className="flex flex-col">
+              {TIMELINE.map((step, i) => {
+                const done   = i < stepsDone
+                const active = i === stepsDone - 1 && progress < 100
+                return (
+                  <div key={i} className="flex gap-4 pb-5 relative last:pb-0">
+                    {i < TIMELINE.length - 1 && (
+                      <div className="absolute left-[13px] top-[26px] bottom-0 w-[2px] bg-border-2" />
+                    )}
+                    <div className={`w-[28px] h-[28px] rounded-full shrink-0 flex items-center justify-center border-[3px] border-white z-10 transition-colors duration-500 ${
+                      progress === 100 ? 'bg-success' : done && active ? 'bg-primary shadow-[0_0_0_4px_rgba(37,99,235,0.15)]' : done ? 'bg-success' : 'bg-surface-2 border-border-2'
+                    }`}>
+                      {done && <CheckCircle size={14} className="text-white fill-white" />}
+                    </div>
+                    <div className="pt-0.5">
+                      <div className={`text-[13.5px] font-bold ${!done && !active ? 'text-t3' : 'text-t1'}`}>
+                        {step.label}
+                      </div>
+                      <div className="text-[12px] text-t3 mt-0.5">{done ? safeDate(rec) : 'En attente'}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
 
           <div className="flex items-start gap-5 bg-muted rounded-[10px] p-4">
             <div>
@@ -369,6 +413,27 @@ export default function UserHistory() {
   const { user } = useAuth()
   const { toast, toasts } = useToast()
   const { data: reclamations = [], loading, refetch } = useMyReclamations()
+  const { unread } = useNotifications()
+  const { unreadCount: unreadMsg } = useUnreadMessages()
+
+  const NAV_ITEMS = [
+    { label: 'Principal', items: [
+      { section: 'dashboard', label: 'Tableau de bord', icon: <LayoutDashboard size={15} /> },
+    ]},
+    { label: 'Réclamations', items: [
+      { href: '/user/history', label: 'Historique & PDF', icon: <FileText size={15} /> },
+      { section: 'signal', label: 'Nouveau signalement', icon: <Plus size={15} /> },
+    ]},
+    { label: 'Services', items: [
+      { section: 'services', label: 'Services municipaux', icon: <Settings size={15} /> },
+      { section: 'demandes', label: 'Mes demandes', icon: <ClipboardCheck size={15} />, badge: 0 },
+    ]},
+    { label: 'Communauté', items: [
+      { href: '/public-feed', label: 'Feed public', icon: <Globe size={15} /> },
+      { section: 'messagerie', label: 'Messagerie', icon: <MessageCircle size={15} />, badge: unreadMsg || 0, badgeRed: true },
+      { section: 'notifications', label: 'Notifications', icon: <Bell size={15} />, badge: unread || 0, badgeRed: true },
+    ]},
+  ]
 
   const [search,    setSearch]    = useState('')
   const [filter,    setFilter]    = useState('Tous')

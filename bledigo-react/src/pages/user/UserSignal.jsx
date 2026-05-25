@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Upload, Sparkles, Loader2, MapPin,
   CheckCircle, X, AlertCircle, FileText, Navigation,
-  LayoutDashboard, Bell, Globe, Plus, ClipboardCheck, Settings,
+  LayoutDashboard, Bell, Globe, Plus, ClipboardCheck, Settings, MessageCircle
 } from 'lucide-react'
 import { aiAPI, reclamationsAPI } from '../../services/api'
 import { useAuth } from '../../context/AuthContext'
+import { useNotifications, useUnreadMessages } from '../../hooks/useData'
 import { useToast } from '../../hooks/useToast'
 import AppShell from '../../components/shared/AppShell'
 import { Card, CardHeader, CardTitle, CardBody } from '../../components/ui/Card'
@@ -151,43 +152,35 @@ function TunisiaMap({ coords, onPick }) {
   )
 }
 
-// ── Navigation items (matching dashboard structure) ─────────
-const NAV_ITEMS = [
-  {
-    label: 'Principal',
-    items: [
-      { section: 'dashboard', label: 'Tableau de bord', icon: <LayoutDashboard size={15} /> },
-    ],
-  },
-  {
-    label: 'Réclamations',
-    items: [
-      { section: 'reclamations', label: 'Mes réclamations', icon: <FileText size={15} />, badge: 0 },
-      { section: 'signal', label: 'Nouveau signalement', icon: <Plus size={15} /> },
-      { href: '/user/history', label: 'Historique & PDF', icon: <FileText size={15} /> },
-    ],
-  },
-  {
-    label: 'Services',
-    items: [
-      { section: 'services', label: 'Services municipaux', icon: <Settings size={15} /> },
-      { section: 'demandes', label: 'Mes demandes', icon: <ClipboardCheck size={15} />, badge: 0 },
-    ],
-  },
-  {
-    label: 'Communauté',
-    items: [
-      { section: 'notifications', label: 'Notifications', icon: <Bell size={15} />, badge: 0, badgeRed: true },
-      { href: '/public-feed', label: 'Feed public', icon: <Globe size={15} /> },
-    ],
-  },
-]
+// Navigation generated inside component
 
 // ════════════════════════════════════════════════════════
 export default function UserSignal() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { toast, toasts } = useToast()
+  
+  const { unread } = useNotifications()
+  const { unreadCount: unreadMsg } = useUnreadMessages()
+
+  const NAV_ITEMS = [
+    { label: 'Principal', items: [
+      { section: 'dashboard', label: 'Tableau de bord', icon: <LayoutDashboard size={15} /> },
+    ]},
+    { label: 'Réclamations', items: [
+      { href: '/user/history', label: 'Historique & PDF', icon: <FileText size={15} /> },
+      { section: 'signal', label: 'Nouveau signalement', icon: <Plus size={15} /> },
+    ]},
+    { label: 'Services', items: [
+      { section:'services',label:'Services municipaux', icon:<Settings size={15}/> },
+      { section: 'demandes', label: 'Mes demandes', icon: <ClipboardCheck size={15} />, badge: 0 },
+    ]},
+    { label: 'Communauté', items: [
+      { href: '/public-feed', label: 'Feed public', icon: <Globe size={15} /> },
+      { section:'messagerie', label:'Messagerie', icon:<MessageCircle size={15}/>, badge:unreadMsg||0, badgeRed:true },
+      { section: 'notifications', label: 'Notifications', icon: <Bell size={15} />, badge: unread||0, badgeRed: true },
+    ]},
+  ]
 
   // Form state
   const [form, setForm] = useState({
@@ -208,6 +201,7 @@ export default function UserSignal() {
   const [submitError,  setSubmitError]  = useState('')
   const [submitted,    setSubmitted]    = useState(false)
   const [savedRec,     setSavedRec]     = useState(null)
+  const [noAgent,      setNoAgent]      = useState(false)
 
   // Sidebar user object
   const sidebarUser = {
@@ -312,6 +306,7 @@ export default function UserSignal() {
       const files = photos.map(p => p.file).filter(Boolean)
       const res = await reclamationsAPI.create(data, files)
       setSavedRec(res.data)
+      setNoAgent(res.noAgentAvailable || false)
       setSubmitted(true)
       toast('Réclamation soumise avec succès !', 'ok')
     } catch (err) {
@@ -324,7 +319,7 @@ export default function UserSignal() {
 
   // ── Reset after success ──────────────────────────────
   function reset() {
-    setSubmitted(false); setSavedRec(null)
+    setSubmitted(false); setSavedRec(null); setNoAgent(false)
     setForm({ category:'', title:'', description:'', address:'' })
     setPhotos([]); setCoords(null)
     setAiResult(null); setAiState('idle')
@@ -381,6 +376,16 @@ export default function UserSignal() {
                 </div>
               ) : null
             })()}
+
+            {noAgent && (
+              <div className="flex items-start gap-2 px-4 py-3 bg-red-50/50 border border-red-200 rounded-xl text-[12.5px] text-red-700 mb-5 text-left shadow-sm">
+                <AlertCircle size={18} className="shrink-0 mt-0.5 text-red-500" />
+                <p className="leading-snug">
+                  <span className="font-bold text-red-800">Aucun agent disponible :</span><br/>
+                  Il n'y a actuellement aucun agent dans le département correspondant à cette catégorie. La réclamation a été mise en attente.
+                </p>
+              </div>
+            )}
 
             {aiResult?.reason && (
               <p className="text-[12.5px] text-t3 mb-5 italic">"{aiResult.reason}"</p>

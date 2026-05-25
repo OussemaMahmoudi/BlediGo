@@ -120,13 +120,7 @@ export const demandes = [
 // ═══════════════════════════════════════════════════════
 // USERS
 // ═══════════════════════════════════════════════════════
-export const users = [
-  { _id:'usr001', id:1, name:'Ahmed Mansour',    firstName:'Ahmed',   lastName:'Mansour',  email:'ahmed@email.com',      role:'Citoyen', cin:'12345678', rec:7, date:'Jan 2026', active:true,  isActive:true  },
-  { _id:'usr002', id:2, name:'Fatma Saidi',      firstName:'Fatma',   lastName:'Saidi',    email:'fatma@email.com',       role:'Citoyen', cin:'87654321', rec:3, date:'Fév 2026', active:true,  isActive:true  },
-  { _id:'usr003', id:3, name:'Karim Zghal',      firstName:'Karim',   lastName:'Zghal',    email:'k.zghal@munic.tn',      role:'Agent',   cin:'AG-0042',  rec:0, date:'Oct 2025', active:true,  isActive:true  },
-  { _id:'usr004', id:4, name:'Mohamed Haddad',   firstName:'Mohamed', lastName:'Haddad',   email:'m.haddad@munic.tn',     role:'Agent',   cin:'AG-0031',  rec:0, date:'Sep 2025', active:true,  isActive:true  },
-  { _id:'usr005', id:5, name:'Youssef Trabelsi', firstName:'Youssef', lastName:'Trabelsi', email:'y.trabelsi@email.com',  role:'Citoyen', cin:'55512345', rec:2, date:'Mars 2026',active:false, isActive:false },
-]
+export const users = []
 
 // ═══════════════════════════════════════════════════════
 // AGENTS

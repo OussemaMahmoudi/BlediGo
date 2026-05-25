@@ -4,6 +4,8 @@ const Admin        = require('../models/Admin');
 const Agent        = require('../models/Agent');
 const Citoyen      = require('../models/Citoyen');
 const Notification = require('../models/Notification');
+const VerificationCode = require('../models/VerificationCode');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/email');
 const { sendToken } = require('../utils/jwt');
 
 const MODEL_MAP = { Admin, Agent, Citoyen };
@@ -20,19 +22,161 @@ async function emailExistsAnywhere(email) {
 }
 
 // ════════════════════════════════════════════════════════
+// POST /api/auth/forgot-password-code
+// ════════════════════════════════════════════════════════
+exports.forgotPasswordCode = async (req, res, next) => {
+  try {
+    const { email, role } = req.body;
+    if (!email || !role) return res.status(400).json({ success: false, message: 'Identifiants requis.' });
+    if (role === 'Admin') return res.status(403).json({ success: false, message: 'Les administrateurs ne peuvent pas réinitialiser leur mot de passe ici.' });
+
+    const cleanEmail = email.toLowerCase().trim();
+    const Model = MODEL_MAP[role];
+    if (!Model) return res.status(400).json({ success: false, message: 'Rôle invalide.' });
+
+    const user = await Model.findOne({ email: cleanEmail });
+    if (!user) {
+      return res.status(404).json({ success: false, message: `Aucun compte ${role} n'a été trouvé avec cet email.` });
+    }
+
+    // Generate code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    await VerificationCode.deleteMany({ email: cleanEmail });
+    await VerificationCode.create({ email: cleanEmail, code });
+
+    await sendPasswordResetEmail(cleanEmail, code, user.firstName);
+    res.json({ success: true, message: 'Code de réinitialisation envoyé.' });
+  } catch (err) { next(err); }
+};
+
+// ════════════════════════════════════════════════════════
+// POST /api/auth/verify-reset-code
+// ════════════════════════════════════════════════════════
+exports.verifyResetCode = async (req, res, next) => {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ success: false, message: 'Informations requises.' });
+
+    const cleanEmail = email.toLowerCase().trim();
+    const validCode = await VerificationCode.findOne({ email: cleanEmail, code });
+    if (!validCode) {
+      return res.status(400).json({ success: false, message: 'Code invalide ou expiré.' });
+    }
+
+    res.json({ success: true, message: 'Code valide.' });
+  } catch (err) { next(err); }
+};
+
+// ════════════════════════════════════════════════════════
+// POST /api/auth/reset-password
+// ════════════════════════════════════════════════════════
+exports.resetPassword = async (req, res, next) => {
+  try {
+    const { email, role, code, newPassword } = req.body;
+    if (!email || !role || !code || !newPassword) 
+      return res.status(400).json({ success: false, message: 'Toutes les informations sont requises.' });
+    if (role === 'Admin') 
+      return res.status(403).json({ success: false, message: 'Action non autorisée pour un Admin.' });
+
+    if (newPassword.length < 8)
+      return res.status(422).json({ success: false, message: 'Minimum 8 caractères requis.' });
+
+    const cleanEmail = email.toLowerCase().trim();
+    
+    // Check code
+    const validCode = await VerificationCode.findOne({ email: cleanEmail, code });
+    if (!validCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code invalide ou expiré.',
+        errors: [{ field: 'code', message: 'Code invalide ou expiré.' }]
+      });
+    }
+
+    const Model = MODEL_MAP[role];
+    if (!Model) return res.status(400).json({ success: false, message: 'Rôle invalide.' });
+
+    const user = await Model.findOne({ email: cleanEmail });
+    if (!user) return res.status(404).json({ success: false, message: 'Utilisateur introuvable.' });
+
+    user.password = newPassword;
+    await user.save(); // Password middleware will handle hashing
+    
+    await VerificationCode.deleteOne({ _id: validCode._id });
+
+    res.json({ success: true, message: 'Mot de passe réinitialisé avec succès.' });
+  } catch (err) { next(err); }
+};
+
+// ════════════════════════════════════════════════════════
+// POST /api/auth/send-verification
+// ════════════════════════════════════════════════════════
+exports.sendVerification = async (req, res, next) => {
+  try {
+    const { email, firstName } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'L\'email est requis.' });
+    }
+    const cleanEmail = email.toLowerCase().trim();
+
+    // Check if email already exists
+    if (await emailExistsAnywhere(cleanEmail)) {
+      return res.status(409).json({
+        success: false,
+        message: 'Cette adresse email est déjà utilisée.',
+        errors: [{ field: 'email', message: 'Un compte existe déjà avec cette adresse email.' }],
+      });
+    }
+
+    // Generate 6 digit code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Delete any existing codes for this email
+    await VerificationCode.deleteMany({ email: cleanEmail });
+
+    // Save new code
+    await VerificationCode.create({ email: cleanEmail, code });
+
+    // Send email
+    await sendVerificationEmail(cleanEmail, code, firstName);
+
+    res.status(200).json({ success: true, message: 'Code de vérification envoyé.' });
+  } catch (err) { next(err); }
+};
+
+// ════════════════════════════════════════════════════════
 // POST /api/auth/register  — creates Citoyen or Agent
 // Role is determined by req.body.role (defaults to Citoyen)
 // Admin accounts are NEVER creatable via public API
 // ════════════════════════════════════════════════════════
 exports.register = async (req, res, next) => {
   try {
-    const { firstName, lastName, email, password, cin, phone, municipality, department, role: requestedRole } = req.body;
+    const { firstName, lastName, email, password, cin, phone, municipality, department, role: requestedRole, verificationCode } = req.body;
 
     // Determine role — Admin registration is forbidden via public API
     const role = requestedRole === 'Agent' ? 'Agent' : 'Citoyen';
 
+    // Verify code first
+    const cleanEmail = email.toLowerCase().trim();
+    if (!verificationCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le code de vérification est requis.',
+        errors: [{ field: 'verificationCode', message: 'Code manquant.' }],
+      });
+    }
+
+    const validCode = await VerificationCode.findOne({ email: cleanEmail, code: verificationCode });
+    if (!validCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code de vérification invalide ou expiré.',
+        errors: [{ field: 'verificationCode', message: 'Code invalide ou expiré.' }]
+      });
+    }
+
     // Global email uniqueness across all 3 collections
-    if (await emailExistsAnywhere(email)) {
+    if (await emailExistsAnywhere(cleanEmail)) {
       return res.status(409).json({
         success: false,
         message: 'Cette adresse email est déjà utilisée.',
@@ -94,6 +238,9 @@ exports.register = async (req, res, next) => {
 
       sendToken(account, 201, res, 'Citoyen');
     }
+
+    // Delete code after successful registration
+    await VerificationCode.deleteOne({ _id: validCode._id });
 
   } catch (err) { next(err); }
 };

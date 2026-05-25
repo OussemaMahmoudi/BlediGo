@@ -31,6 +31,7 @@ const agentRoutes        = require('./routes/agents');
 const notificationRoutes = require('./routes/notifications');
 const aiRoutes            = require('./routes/ai');
 const profileRoutes       = require('./routes/profile');
+const messageRoutes       = require('./routes/messages');
 
 // ── Connect to MongoDB ─────────────────────────────────
 connectDB();
@@ -104,6 +105,7 @@ app.use('/api/agents',        agentRoutes);
 app.use('/api/ai',            aiRoutes);
 app.use('/api/profile',       profileRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/messages',      messageRoutes);
 
 // ── 404 handler ─────────────────────────────────────────
 app.use((_req, res) => {
@@ -144,3 +146,5 @@ process.on('unhandledRejection', (err) => {
 });
 
 module.exports = app; // for testing
+
+// trigger nodemon restart

@@ -18,6 +18,8 @@ const createRules = [
 
 // ── Public routes (no auth) ─────────────────────────────
 router.get('/public',       optionalAuth, ctrl.getPublicFeed);
+router.get('/cancel-via-email', ctrl.cancelViaEmail);
+
 
 // ── Citizen routes ──────────────────────────────────────
 router.post('/',

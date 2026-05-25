@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, Settings,
-  Bell, CheckCircle, Globe, Plus, ClipboardCheck,
+  Bell, CheckCircle, Globe, Plus, ClipboardCheck, MessageCircle,
 } from 'lucide-react'
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import AppShell    from '../../components/shared/AppShell'
 import { Card, CardHeader, CardTitle, CardBody } from '../../components/ui/Card'
 import StatCard    from '../../components/ui/StatCard'
@@ -12,10 +13,14 @@ import Button      from '../../components/ui/Button'
 import ProgressBar from '../../components/ui/ProgressBar'
 import { PageLoader } from '../../components/ui/Skeleton'
 import { useToast }   from '../../hooks/useToast'
-import { useMyReclamations, useDemandes, useNotifications, useServices } from '../../hooks/useData'
+import { useMyReclamations, useMyDemands, useNotifications, useServices, useUnreadMessages } from '../../hooks/useData'
 import { useAuth }    from '../../context/AuthContext'
-import { notificationsAPI, servicesAPI } from '../../services/api'
+import { notificationsAPI } from '../../services/api'
+import MessageriePanel    from '../../components/shared/MessageriePanel'
+import CitizenServicesPage from '../../components/shared/CitizenServicesPage'
+import CitizenDemandsPanel from '../../components/shared/CitizenDemandsPanel'
 
+// ── Helpers ───────────────────────────────────────────────
 const safe      = (v, fb = '—') => (v != null && v !== '') ? String(v) : fb
 const safeId    = (r) => safe(r?._id || r?.id || r?.ref, String(Math.random()).slice(2,8)).slice(-6)
 const safeDate  = (r) => r?.date || (r?.createdAt ? new Date(r.createdAt).toLocaleDateString('fr-FR') : '—')
@@ -32,7 +37,10 @@ export default function UserDashboard() {
   const navigate = useNavigate()
   const { user: authUser } = useAuth()
   const { toasts, toast }  = useToast()
-  const [section, setSection] = useState('dashboard')
+  
+  // Read section from URL query param to support cross-page navigation
+  const querySection = new URLSearchParams(window.location.search).get('section')
+  const [section, setSection] = useState(querySection || 'dashboard')
 
   const USER = {
     name:      authUser ? `${authUser.firstName||''} ${authUser.lastName||''}`.trim() || 'Citoyen' : 'Citoyen',
@@ -42,16 +50,17 @@ export default function UserDashboard() {
   }
 
   const { data: reclamations = [], loading: recLoading } = useMyReclamations()
-  const { data: demandes = [] }                           = useDemandes()
-  const { data: notifs = [], setData: setNotifs }         = useNotifications()
-  const { data: services = [] }                             = useServices()
+  const { data: myDemands = [], setData: setMyDemands }  = useMyDemands()  // BF10
+  const { data: notifs = [], setData: setNotifs }        = useNotifications()
+  const { data: services = [] }                          = useServices()
 
   const unread       = notifs.filter(n => !n?.isRead || n?.unread).length
   const ACTIVE_STATUSES   = ['Pending','In Progress','En attente','En cours','Critical','Critique']
   const RESOLVED_STATUSES = ['Resolved','Resolue']
   const activeRecs   = reclamations.filter(r => ACTIVE_STATUSES.includes(r?.status))
   const resolvedRecs = reclamations.filter(r => RESOLVED_STATUSES.includes(r?.status))
-  const activeDems   = demandes.filter(d => d?.status === 'En attente' || d?.status === 'En cours')
+  const activeDems   = myDemands.filter(d => d?.status === 'Pending')
+  const unreadMsg    = useUnreadMessages()
 
   async function markNotifRead(n) {
     const id = n?._id || n?.id
@@ -71,17 +80,17 @@ export default function UserDashboard() {
       { section:'dashboard',     label:'Tableau de bord',     icon:<LayoutDashboard size={15}/> },
     ]},
     { label:'Réclamations', items:[
-      { section:'reclamations',  label:'Mes réclamations',    icon:<FileText size={15}/>,        badge:activeRecs.length||undefined },
-      { section:'signal',        label:'Nouveau signalement', icon:<Plus size={15}/> },
       { href:'/user/history',    label:'Historique & PDF',    icon:<FileText size={15}/> },
+      { section:'signal',        label:'Nouveau signalement', icon:<Plus size={15}/> },
     ]},
     { label:'Services', items:[
       { section:'services',      label:'Services municipaux', icon:<Settings size={15}/> },
       { section:'demandes',      label:'Mes demandes',        icon:<ClipboardCheck size={15}/>,  badge:activeDems.length||undefined },
     ]},
     { label:'Communauté', items:[
-      { section:'notifications', label:'Notifications',       icon:<Bell size={15}/>,            badge:unread||undefined, badgeRed:true },
       { href:'/public-feed',     label:'Feed public',         icon:<Globe size={15}/> },
+      { section:'messagerie',    label:'Messagerie',          icon:<MessageCircle size={15}/>,   badge:unreadMsg||undefined, badgeRed:true },
+      { section:'notifications', label:'Notifications',       icon:<Bell size={15}/>,            badge:unread||undefined, badgeRed:true },
     ]},
   ]
 
@@ -91,6 +100,7 @@ export default function UserDashboard() {
     signal:        { title:'Signalement',         bread:'Soumettre un problème' },
     services:      { title:'Services municipaux', bread:'Catalogue des services' },
     demandes:      { title:'Mes demandes',        bread:'Historique des demandes' },
+    messagerie:    { title:'Messagerie',          bread:'Vos conversations' },
     notifications: { title:'Notifications',       bread:`${unread} non lue${unread!==1?'s':''}` },
   }
   const meta = TITLES[section] || TITLES.dashboard
@@ -108,8 +118,7 @@ export default function UserDashboard() {
       userStats={{ reclamations: reclamations.length, resolved: resolvedRecs.length, demandes: activeDems.length }}
       toasts={toasts}
     >
-
-      {/* ── DASHBOARD ── */}
+      {/* DASHBOARD */}
       {section === 'dashboard' && (
         <div className="animate-fade-up space-y-5">
           <div className="flex items-start justify-between flex-wrap gap-3">
@@ -141,7 +150,7 @@ export default function UserDashboard() {
               <Card>
                 <CardHeader>
                   <CardTitle>Mes réclamations récentes</CardTitle>
-                  <Button variant="ghost" size="sm" onClick={()=>setSection('reclamations')}>Voir tout →</Button>
+                  <Button variant="ghost" size="sm" onClick={()=>navigate('/user/history')}>Voir tout →</Button>
                 </CardHeader>
                 {reclamations.length === 0 ? (
                   <div className="p-10 text-center text-t3">
@@ -155,11 +164,13 @@ export default function UserDashboard() {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full border-collapse min-w-[480px]">
-                      <thead><tr>
-                        {['Réf.','Titre','Catégorie','Statut','Date'].map(h => (
-                          <th key={h} className="text-[11px] font-bold text-t3 uppercase tracking-wide px-4 py-2.5 text-left bg-surface-2 border-b border-border">{h}</th>
-                        ))}
-                      </tr></thead>
+                      <thead>
+                        <tr>
+                          {['Réf.','Titre','Catégorie','Statut','Date'].map(h => (
+                            <th key={h} className="text-[11px] font-bold text-t3 uppercase tracking-wide px-4 py-2.5 text-left bg-surface-2 border-b border-border">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
                       <tbody>
                         {reclamations.slice(0,5).map((r,i) => (
                           <tr key={r?._id||r?.id||i} className="hover:bg-surface-2 transition-colors border-b border-border last:border-0">
@@ -174,6 +185,55 @@ export default function UserDashboard() {
                     </table>
                   </div>
                 )}
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle>Répartition par Statut</CardTitle></CardHeader>
+                <CardBody className="flex items-center justify-center p-0 pt-2 pb-4">
+                  {reclamations.length === 0 ? (
+                    <p className="text-t3 text-[13px] py-10">Aucune donnée</p>
+                  ) : (
+                    <div className="w-full h-[140px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'En attente', value: reclamations.filter(r=>['Pending','En attente'].includes(r?.status)).length, color: '#FCD34D' },
+                              { name: 'En cours', value: activeRecs.length, color: '#3B82F6' },
+                              { name: 'Résolues', value: resolvedRecs.length, color: '#10B981' }
+                            ].filter(d=>d.value>0)}
+                            cx="50%" cy="50%" innerRadius={35} outerRadius={60}
+                            paddingAngle={3} dataKey="value" stroke="none"
+                          >
+                            { [{}].map((_, index) => (
+                              // Workaround map for cells, we'll map inside dynamically
+                              null
+                            )) }
+                          </Pie>
+                          {/* Proper dynamic cell mapping wrapper: */}
+                          <Pie
+                            data={[
+                              { name: 'En attente', value: reclamations.filter(r=>['Pending','En attente'].includes(r?.status)).length, color: '#E8873A' },
+                              { name: 'En cours', value: activeRecs.length, color: '#1A3C6B' },
+                              { name: 'Résolues', value: resolvedRecs.length, color: '#1D8C5E' }
+                            ].filter(d=>d.value>0)}
+                            cx="50%" cy="50%" innerRadius={35} outerRadius={60}
+                            paddingAngle={3} dataKey="value" stroke="none"
+                          >
+                            { [
+                              { name: 'En attente', value: reclamations.filter(r=>['Pending','En attente'].includes(r?.status)).length, color: '#E8873A' },
+                              { name: 'En cours', value: activeRecs.length, color: '#1A3C6B' },
+                              { name: 'Résolues', value: resolvedRecs.length, color: '#1D8C5E' }
+                            ].filter(d=>d.value>0).map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={{ borderRadius: '8px', fontSize: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardBody>
               </Card>
 
               {activeRecs.find(r=>r?.status==='En cours') && (()=>{
@@ -241,89 +301,35 @@ export default function UserDashboard() {
         </div>
       )}
 
-      {/* ── RECLAMATIONS ── */}
-      {section==='reclamations' && (
+      {/* SERVICES — BF7 */}
+      {section === 'services' && (
+        <CitizenServicesPage services={services} onDemandSubmitted={() => {}} />
+      )}
+
+      {/* DEMANDES — BF10 */}
+      {section === 'demandes' && (
         <div className="animate-fade-up">
-          <div className="flex items-start justify-between mb-5 flex-wrap gap-3">
+          <div className="flex items-start justify-between mb-5">
             <div>
-              <h1 className="font-syne text-xl font-bold">Mes réclamations</h1>
-              <p className="text-[13px] text-t3 mt-0.5">{reclamations.length} réclamation{reclamations.length!==1?'s':''}</p>
+              <h1 className="font-syne text-xl font-bold">Mes demandes de services</h1>
+              <p className="text-[13px] text-t3 mt-0.5">{myDemands.length} demande{myDemands.length !== 1 ? 's' : ''} · {activeDems.length} en attente</p>
             </div>
-            <Button variant="accent" size="sm" onClick={()=>navigate('/user/signal')}><Plus size={14}/> Nouvelle réclamation</Button>
+            <Button variant="outline" size="sm" onClick={() => setSection('services')}>
+              + Nouvelle demande
+            </Button>
           </div>
-          {recLoading ? <PageLoader/> : (
-            <Card>
-              {reclamations.length===0
-                ? <div className="p-12 text-center text-t3"><FileText size={40} className="mx-auto mb-3 opacity-25"/><p className="text-[15px] font-medium mb-4">Aucune réclamation</p><Button variant="accent" size="sm" onClick={()=>navigate('/user/signal')}><Plus size={13}/> Soumettre</Button></div>
-                : <div className="overflow-x-auto"><table className="w-full border-collapse min-w-[580px]">
-                    <thead><tr>{['Réf.','Titre','Catégorie','Agent','Statut','Date'].map(h=><th key={h} className="text-[11px] font-bold text-t3 uppercase tracking-wide px-4 py-2.5 text-left bg-surface-2 border-b border-border">{h}</th>)}</tr></thead>
-                    <tbody>
-                      {reclamations.map((r,i)=>(
-                        <tr key={r?._id||r?.id||i} className="hover:bg-surface-2 border-b border-border last:border-0">
-                          <td className="px-4 py-3 font-bold text-primary text-[13px]">#{safeId(r)}</td>
-                          <td className="px-4 py-3 text-[13px] max-w-[140px] truncate">{safe(r?.title)}</td>
-                          <td className="px-4 py-3"><span className="text-[11.5px] font-medium px-2 py-0.5 rounded bg-muted text-t2 border border-border">{safe(r?.category||r?.cat)}</span></td>
-                          <td className="px-4 py-3 text-[12.5px] text-t2">{safe(r?.assignedAgent?.firstName||r?.agent)}</td>
-                          <td className="px-4 py-3"><Badge status={STATUS_BADGE[r?.status]||'pending'}>{safe(r?.status,'En attente')}</Badge></td>
-                          <td className="px-4 py-3 text-[12px] text-t3">{safeDate(r)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table></div>
-              }
-            </Card>
-          )}
+          <CitizenDemandsPanel demands={myDemands} setDemands={setMyDemands} />
         </div>
       )}
 
-      {/* ── SERVICES ── */}
-      {section==='services' && (
-        <div className="animate-fade-up">
-          <h1 className="font-syne text-xl font-bold mb-5">Services municipaux</h1>
-          {services.length === 0 ? (
-            <div className="text-center py-16 text-t3"><Settings size={36} className="mx-auto mb-3 opacity-25"/><p>Aucun service disponible</p></div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {services.map(s => {
-                const sid    = s._id || s.id
-                const avail  = s.isActive !== false && s.active !== false
-                const hours  = s.schedule ? `${s.schedule.days||''} ${s.schedule.openTime||''}–${s.schedule.closeTime||''}`.trim() : '—'
-                const catEmojis = {'Etat civil':'🪪','Urbanisme':'🏗️','Proprete':'♻️','Transport':'🚌','Culture':'🎭','Education':'📚','Sante':'🏥','Autre':'🏛️'}
-                const emoji = catEmojis[s.category] || '🏛️'
-                return (
-                  <div key={sid} className="bg-white border border-border rounded-card p-5 hover:shadow-card hover:-translate-y-0.5 transition-all">
-                    <div className="w-11 h-11 rounded-[10px] bg-muted flex items-center justify-center text-xl mb-3">{emoji}</div>
-                    <h3 className="font-syne text-[14px] font-bold mb-1">{s.name}</h3>
-                    <p className="text-[12px] text-t3 mb-1">{s.category}</p>
-                    {s.description && <p className="text-[12px] text-t2 mb-3 line-clamp-2">{s.description}</p>}
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={`text-[11.5px] font-semibold px-2 py-1 rounded-[6px] ${avail?'bg-success-light text-success':'bg-danger-light text-danger'}`}>
-                        {avail ? 'Disponible' : 'Indisponible'}
-                      </span>
-                      <span className="text-[11px] text-t3">{hours}</span>
-                    </div>
-                    {avail && (
-                      <Button variant="primary" full size="sm" onClick={async () => {
-                        try {
-                          await servicesAPI.submitDemand(sid, {})
-                          toast(`Demande envoyée pour "${s.name}" ✓`, 'ok')
-                        } catch(e) {
-                          toast(e?.response?.data?.message || 'Erreur lors de la demande', 'err')
-                        }
-                      }}>
-                        Faire une demande
-                      </Button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+      {/* MESSAGERIE */}
+      {section === 'messagerie' && (
+        <MessageriePanel role="Citoyen" />
       )}
 
-      {/* ── NOTIFICATIONS ── */}
-      {section==='notifications' && (
+      {/* NOTIFICATIONS */}
+      {section === 'notifications' && (
+
         <div className="animate-fade-up">
           <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
             <div><h1 className="font-syne text-xl font-bold">Notifications</h1><p className="text-[13px] text-t3 mt-0.5">{unread} non lue{unread!==1?'s':''}</p></div>
@@ -349,32 +355,6 @@ export default function UserDashboard() {
           </Card>
         </div>
       )}
-
-      {/* ── DEMANDES ── */}
-      {section==='demandes' && (
-        <div className="animate-fade-up">
-          <h1 className="font-syne text-xl font-bold mb-5">Mes demandes de services</h1>
-          <Card>
-            {demandes.length===0
-              ? <div className="p-12 text-center text-t3"><ClipboardCheck size={36} className="mx-auto mb-3 opacity-25"/><p className="text-[14px] font-medium">Aucune demande</p></div>
-              : <div className="overflow-x-auto"><table className="w-full border-collapse min-w-[480px]">
-                  <thead><tr>{['Réf.','Service','Date','Statut'].map(h=><th key={h} className="text-[11px] font-bold text-t3 uppercase tracking-wide px-4 py-2.5 text-left bg-surface-2 border-b border-border">{h}</th>)}</tr></thead>
-                  <tbody>
-                    {demandes.map((d,i)=>(
-                      <tr key={d?._id||d?.id||i} className="hover:bg-surface-2 border-b border-border last:border-0">
-                        <td className="px-4 py-3 font-bold text-primary text-[13px]">#{safeId(d)}</td>
-                        <td className="px-4 py-3 text-[13px]">{safe(d?.svc||d?.service)}</td>
-                        <td className="px-4 py-3 text-[12.5px] text-t3">{safe(d?.date||(d?.createdAt?new Date(d.createdAt).toLocaleDateString('fr-FR'):null))}</td>
-                        <td className="px-4 py-3"><Badge status={STATUS_BADGE[d?.status==='Expire'?'Critique':d?.status]||'pending'}>{safe(d?.status,'En attente')}</Badge></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table></div>
-            }
-          </Card>
-        </div>
-      )}
-
     </AppShell>
   )
 }
